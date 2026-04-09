@@ -66,28 +66,7 @@ const PERIOD_LABELS = [
 // ── Gemini API ─────────────────────────────────────────────────────────────
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// 使えるモデルをAPIから自動取得してキャッシュ
-let _cachedModel = null;
-async function pickModel(apiKey) {
-  if (_cachedModel) return _cachedModel;
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=50`
-    );
-    if (!res.ok) throw new Error();
-    const data = await res.json();
-    const PREFER = ["flash-lite","2.0-flash","flash","pro"];
-    const candidates = (data.models||[])
-      .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
-      .map(m => m.name.replace("models/",""));
-    for (const kw of PREFER) {
-      const found = candidates.find(c => c.includes(kw));
-      if (found) { _cachedModel = found; return found; }
-    }
-    if (candidates[0]) { _cachedModel = candidates[0]; return candidates[0]; }
-  } catch(e) {}
-  return "gemini-2.5-flash"; // fallback
-}
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 async function analyzeFood(base64Image, mimeType, apiKey, userMemo) {
   const hasImage = !!base64Image;
@@ -104,10 +83,9 @@ async function analyzeFood(base64Image, mimeType, apiKey, userMemo) {
     ? [{ inline_data:{ mime_type:mimeType, data:base64Image }}, { text:prompt }]
     : [{ text:prompt }];
 
-  const model = await pickModel(apiKey);
   for (let attempt = 1; attempt <= 3; attempt++) {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
       { method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ contents:[{ parts }], generationConfig:{ maxOutputTokens:1024 }}) }
     );
