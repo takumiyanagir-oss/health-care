@@ -66,32 +66,27 @@ const PERIOD_LABELS = [
 // ── Gemini API ─────────────────────────────────────────────────────────────
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-const GEMINI_MODELS = [
-  "gemini-2.0-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-latest",
-];
-
-async function callGemini(parts, apiKey, model) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    { method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ contents:[{ parts }], generationConfig:{ maxOutputTokens:1024 }}) }
-  );
-  if (!res.ok) {
-    const e = await res.json().catch(()=>({}));
-    const err = new Error(e?.error?.message || `APIエラー(${res.status})`);
-    err.status = res.status;
-    throw err;
-  }
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  if (!text) throw new Error("応答が空でした");
-  const m = text.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error("JSON解析に失敗しました");
-  return JSON.parse(m[0]);
+// 使えるモデルをAPIから自動取得してキャッシュ
+let _cachedModel = null;
+async function pickModel(apiKey) {
+  if (_cachedModel) return _cachedModel;
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=50`
+    );
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    const PREFER = ["flash-lite","2.0-flash","flash","pro"];
+    const candidates = (data.models||[])
+      .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
+      .map(m => m.name.replace("models/",""));
+    for (const kw of PREFER) {
+      const found = candidates.find(c => c.includes(kw));
+      if (found) { _cachedModel = found; return found; }
+    }
+    if (candidates[0]) { _cachedModel = candidates[0]; return candidates[0]; }
+  } catch(e) {}
+  return "gemini-2.5-flash"; // fallback
 }
 
 async function analyzeFood(base64Image, mimeType, apiKey, userMemo) {
@@ -109,21 +104,26 @@ async function analyzeFood(base64Image, mimeType, apiKey, userMemo) {
     ? [{ inline_data:{ mime_type:mimeType, data:base64Image }}, { text:prompt }]
     : [{ text:prompt }];
 
-  let lastError;
-  for (const model of GEMINI_MODELS) {
-    try {
-      return await callGemini(parts, apiKey, model);
-    } catch(e) {
-      lastError = e;
-      // 404はモデルが存在しない→次のモデルへ。429/503は少し待って次のモデルへ
-      if (e.status === 429 || e.status === 503 || e.status === 500) {
-        await sleep(2000);
-      }
-      // それ以外のエラー（401など）はリトライ不要
-      if (e.status === 401 || e.status === 400) throw e;
+  const model = await pickModel(apiKey);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ contents:[{ parts }], generationConfig:{ maxOutputTokens:1024 }}) }
+    );
+    if (!res.ok) {
+      const e = await res.json().catch(()=>({}));
+      const status = res.status;
+      if ((status===429||status===503||status===500) && attempt<3) { await sleep(attempt*3000); continue; }
+      throw new Error(e?.error?.message || `APIエラー(${status})`);
     }
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!text) throw new Error("応答が空でした");
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("JSON解析に失敗しました");
+    return JSON.parse(m[0]);
   }
-  throw lastError;
 }
 
 // ── ユーティリティ ─────────────────────────────────────────────────────────
