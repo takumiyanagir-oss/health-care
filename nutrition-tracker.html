@@ -879,7 +879,7 @@ function App() {
 
       {/* コンテンツ */}
       <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-        {tab==="record"   && <RecordTab/>}
+        {tab==="record"   && RecordTab()}
         {tab==="stats"    && <StatsTab/>}
         {tab==="settings" && <SettingsTab/>}
       </div>
