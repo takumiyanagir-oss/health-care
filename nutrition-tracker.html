@@ -203,7 +203,7 @@ function BarChartSVG({ data, dataKey, color, goal }) {
 // ── メインアプリ ────────────────────────────────────────────────────────────
 function App() {
   const [tab, setTab] = useState("record");
-  const [apiKey, setApiKey] = useState(()=>sessionStorage.getItem("gemini_key")||"");
+  const [apiKey, setApiKey] = useState(()=>localStorage.getItem("gemini_key")||"");
   const [imagePreview, setImagePreview] = useState(null);
   const [imageData, setImageData] = useState(null);
   const [memo, setMemo] = useState("");
@@ -693,11 +693,11 @@ function App() {
       const k = localInput.trim();
       if (!k) return;
       setApiKey(k);
-      sessionStorage.setItem("gemini_key", k);
+      localStorage.setItem("gemini_key", k);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     };
-    const handleClearKey = () => { setApiKey(""); setLocalInput(""); sessionStorage.removeItem("gemini_key"); };
+    const handleClearKey = () => { setApiKey(""); setLocalInput(""); localStorage.removeItem("gemini_key"); };
     const handleClearData = () => {
       if (window.confirm(`全記録（${totalMeals}件）を削除しますか？\nこの操作は元に戻せません。`)) {
         saveMeals([]);
